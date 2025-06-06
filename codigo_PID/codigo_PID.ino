@@ -6,7 +6,7 @@
 #include <I2Cdev.h> //Facilita conexión I2C
 
 Ticker timer; //Rutina de interrupción periódica. 
-const double T = 0.03; //Periodo de muestreo 30ms
+const double T = 0.033; //Periodo de muestreo 30ms
 
 //Motores: 
 int motor11 = 1; //Motor1
@@ -36,8 +36,8 @@ const int GyZcal = 19;
 
 //Mediciones del ángulo (Varias opciones):
 double ym1 = 0.0; //No filtrada y solo se usa el acelerómetro. 
-double ym2 = 0.0; //Filtrada y solo se usa el acelerómetro. 
-double ym3 = 0.0; //Filtro complementario.
+double ym2 = 0.0; //Filtro paso bajo del acelerómetro. 
+double ym3 = 0.0; //Filtro complementario. (Giroscopio + acelerómetro)
 double ym4 = 0.0; 
 //Valor en grados --> Comprobar experimentalmente su utilidad. 
 double ym1_grad = 0.0; 
@@ -48,8 +48,8 @@ double ym4_grad = 0.0;
 
 //Parámetros para el control PD. 
 const double r = 1.0; //Referencia --> U = grados
-const double kp = 3.15; // 3.15
-const double kd = 0.026; // 0.025
+const double kp = 2.0; // 3.15
+const double kd = 0.2; // 0.025
 double e = 0.0; //Error en la medición actual.
 double eo = 0.0; //Error en la medición anterior.  
 double ed = 0.0; //Error para la derivada. 
@@ -89,11 +89,11 @@ void get_angle(int Ax, int Ay, int Az, int Gy) {
   double B = 0.05; 
  
   //Parámetros --> Filtro paso bajo: 
-  double a = 0.2; //Ajustar con la evolución de ym2 en SerialPlot
+  double a = 0.9; //Ajustar con la evolución de ym2 en SerialPlot
   double Gy_rad = GyY * (M_PI / 180.0); //Pasamos a radianes/segundo
   ym1 = atan(Ax / sqrt((Ay*Ay) + (Az*Az))); //U --> radianes
   ym2 = a*ym2 + (1-a)*ym1; //U --> radianes
-  ym3 = A * (ym1 + (Gy_rad)*T) + B *ym1; 
+  ym3 = A * (ym3 + (Gy_rad)*T) + B *ym1; 
   ym4 = a*ym4 + (1-a)*ym3; 
   
   //Conversión de radianes a grados: 
@@ -105,7 +105,7 @@ void get_angle(int Ax, int Ay, int Az, int Gy) {
   //limitador_pendiente(ym1_grad);
   //limitador_pendiente(ym2_grad);
   //limitador_pendiente(ym3_grad);
-  limitador_pendiente();
+  //limitador_pendiente();
   ym3_grad_ant = ym3_grad;
 }
 
