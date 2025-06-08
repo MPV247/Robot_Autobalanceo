@@ -6,7 +6,7 @@
 #include <I2Cdev.h> //Facilita conexión I2C
 
 Ticker timer; //Rutina de interrupción periódica. 
-const double T = 0.033; //Periodo de muestreo 30ms
+const double T = 0.033; //Muestreo a 30Hz.
 
 //Motores: 
 int motor11 = 1; //Motor1
@@ -15,7 +15,7 @@ int motor21 = 3; //Motor2
 int motor22 = 4; 
 int enable1 = 8; //Jumper 1
 int enable2 = 9; //Jumper 2
-const int freq = 30; //Frecuncia de PWM (ajustar)
+const int freq = 30; //Frecuncia de PWM.
 const int canal1 = 0; 
 const int canal2 = 1; 
 const int resol = 8; //8 bits de resolución (0 - 255)
@@ -26,7 +26,7 @@ const int MPU = 0X68; //Dirección I2C
 // Variables para las lecturas del acelerómetro y giroscopio (raw)
 int16_t ax, ay, az, gx, gy, gz;
 double AcX, AcY, AcZ, tmp99, GyX, GyY, GyZ; //Variables.
-//Parámetros de calibración --> Ajustar de forma experimental. 
+//Parámetros de calibración (Offsets) 
 const int AcXcal = -5482;
 const int AcYcal = -1169;
 const int AcZcal = 1676;
@@ -39,7 +39,7 @@ double ym1 = 0.0; //No filtrada y solo se usa el acelerómetro.
 double ym2 = 0.0; //Filtro paso bajo del acelerómetro. 
 double ym3 = 0.0; //Filtro complementario. (Giroscopio + acelerómetro)
 double ym4 = 0.0; 
-//Valor en grados --> Comprobar experimentalmente su utilidad. 
+//Valor en grados --> Mejor interpretación.  
 double ym1_grad = 0.0; 
 double ym2_grad = 0.0; 
 double ym3_grad = 0.0; 
@@ -48,8 +48,8 @@ double ym4_grad = 0.0;
 
 //Parámetros para el control PD. 
 const double r = 1.0; //Referencia --> U = grados
-const double kp = 2.0; // 3.15
-const double kd = 0.2; // 0.025
+const double kp = 2.0; // Acción proporcional (P)
+const double kd = 0.2; // Acción derivada (D)
 double e = 0.0; //Error en la medición actual.
 double eo = 0.0; //Error en la medición anterior.  
 double ed = 0.0; //Error para la derivada. 
@@ -63,7 +63,6 @@ volatile int pwmValue = 15;
 unsigned long pwmFrequency = 30;
 
 //Funciones: 
-//Objetivo: cargar las variables del IMU
 void read_MPU6050(){
   mpu.getMotion6(&ax, &ay, &az, &gx, &gy, &gz);
   //Escalar los valores a RAW en un rango. 
@@ -83,17 +82,22 @@ void limitador_pendiente() {
 }
 void get_angle(int Ax, int Ay, int Az, int Gy) {
   //Parámetros filtro complementario: 
-  //Ajustar valores mediante visaulización en SerialPlot.
   //Requisito --> A + B = 1
-  double A = 0.95; 
-  double B = 0.05; 
+  double A = 0.95; //Peso del giroscopio.
+  double B = 0.05; //Peso del acelerómetro.
  
   //Parámetros --> Filtro paso bajo: 
-  double a = 0.9; //Ajustar con la evolución de ym2 en SerialPlot
-  double Gy_rad = GyY * (M_PI / 180.0); //Pasamos a radianes/segundo
-  ym1 = atan(Ax / sqrt((Ay*Ay) + (Az*Az))); //U --> radianes
-  ym2 = a*ym2 + (1-a)*ym1; //U --> radianes
+  double a = 0.9; //a >> mayor filtrado, pero señal más lenta. 
+
+  double Gy_rad = GyY * (M_PI / 180.0); //Pasamos a radianes/segundo.
+  //Cálculo del pitch (U --> radianes)
+  //Solo acelerómetro --> Estable en el tiempo, pero mucho ruido.
+  ym1 = atan(Ax / sqrt((Ay*Ay) + (Az*Az))); 
+  ym2 = a*ym2 + (1-a)*ym1; 
+  //Acelerómetro + giroscopio --> Estable en el tiempo y poco ruido.
   ym3 = A * (ym3 + (Gy_rad)*T) + B *ym1; 
+  //Señal ym3 filtrada para la acción derivada.
+  //Motivo: La acción derivada amplifica el ruido de medida.
   ym4 = a*ym4 + (1-a)*ym3; 
   
   //Conversión de radianes a grados: 
@@ -102,10 +106,7 @@ void get_angle(int Ax, int Ay, int Az, int Gy) {
   ym3_grad = ym3 * (180.0 / M_PI);
   ym4_grad = ym4 * (180.0 / M_PI);
   
-  //limitador_pendiente(ym1_grad);
-  //limitador_pendiente(ym2_grad);
-  //limitador_pendiente(ym3_grad);
-  //limitador_pendiente();
+  limitador_pendiente();
   ym3_grad_ant = ym3_grad;
 }
 
@@ -159,6 +160,7 @@ void PwmTask(void *pvParameters) {
   }
 }
 
+//Objetivo: Todas las acciones de control producen movimiento en las ruedas.
 void banda_muerta() {
   if (u < 0){
     u = u - 12;
@@ -168,22 +170,14 @@ void banda_muerta() {
   }
 }
 
-//Objetivo: Mostrar la evolución de las variables de interés. 
+//Objetivo: Visualización en el Serial Plotter 
 void ploter_debug() {
-  Serial.print("Y1rad:");
-  Serial.print(ym1);
-  Serial.print(",Y1grados:");
+  Serial.print("Y1grados:"); //Solo acelerómetro
   Serial.print(ym1_grad);
-  Serial.print(",Y2rad:");
-  Serial.print(ym2);
-  Serial.print(",Y2grados:");
-  Serial.print(ym2_grad);
-  Serial.print(",Y3rad:");
-  Serial.print(ym3);
-  Serial.print(",Y3grados:");
+  Serial.print(",Y3grados:"); //Complementario
   Serial.print(ym3_grad);
-  Serial.print(",Y4grados:");
-  Serial.println(ym4_grad);
+  Serial.print(",Y4grados:"); //Complementario + Filtro
+  Serial.print(ym4_grad);
   Serial.print(",U_PWM:");
   Serial.println(u);
 }
@@ -230,14 +224,10 @@ void setup() {
   mpu.setYGyroOffset(GyYcal);
   mpu.setZGyroOffset(GyZcal);
 
-  //Pines motores:
-  // pinMode(motor11, OUTPUT);
-  // pinMode(motor12, OUTPUT);
-  // pinMode(motor21, OUTPUT);
-  // pinMode(motor22, OUTPUT);
-
   //Rutina de interrupción periódica.
-  timer.attach(T, bucle_control);
+  timer.attach(T, bucle_control); //Core 0
+  
+  //PWM en el Core 1 --> Un solo core para el bucle de control.
   xTaskCreatePinnedToCore(
     PwmTask,
     "PWM_Control",
@@ -249,6 +239,4 @@ void setup() {
   );
 }
 
-void loop() {
-
-}
+void loop() {}
