@@ -226,7 +226,12 @@ void setup() {
 
   //Rutina de interrupción periódica.
   timer.attach(T, bucle_control); //Core 0
-  
+
+  //Pines motores
+  pinMode(motor11, OUTPUT);
+  pinMode(motor12, OUTPUT);
+  pinMode(motor21, OUTPUT);
+  pinMode(motor22, OUTPUT);
   //PWM en el Core 1 --> Un solo core para el bucle de control.
   xTaskCreatePinnedToCore(
     PwmTask,
