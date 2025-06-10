@@ -13,8 +13,6 @@ int motor11 = 1; //Motor1
 int motor12 = 2; 
 int motor21 = 3; //Motor2 
 int motor22 = 4; 
-int enable1 = 8; //Jumper 1
-int enable2 = 9; //Jumper 2
 const int freq = 30; //Frecuncia de PWM.
 const int canal1 = 0; 
 const int canal2 = 1; 
@@ -35,13 +33,12 @@ const int GyYcal = -36;
 const int GyZcal = 19;
 
 //Mediciones del ángulo (Varias opciones):
-double ym1 = 0.0; //No filtrada y solo se usa el acelerómetro. 
-double ym2 = 0.0; //Filtro paso bajo del acelerómetro. 
+double ym1 = 0.0; //No filtrada y solo se usa el acelerómetro.  
 double ym3 = 0.0; //Filtro complementario. (Giroscopio + acelerómetro)
-double ym4 = 0.0; 
+double ym4 = 0.0; //Filtro paso bajo para la acción derivada. 
+
 //Valor en grados --> Mejor interpretación.  
 double ym1_grad = 0.0; 
-double ym2_grad = 0.0; 
 double ym3_grad = 0.0; 
 double ym3_grad_ant = 0.0; 
 double ym4_grad = 0.0; 
@@ -49,7 +46,7 @@ double ym4_grad = 0.0;
 //Parámetros para el control PD. 
 const double r = 1.0; //Referencia --> U = grados
 const double kp = 2.0; // Acción proporcional (P)
-const double kd = 0.2; // Acción derivada (D)
+const double kd = 0.3; // Acción derivada (D)
 double e = 0.0; //Error en la medición actual.
 double eo = 0.0; //Error en la medición anterior.  
 double ed = 0.0; //Error para la derivada. 
@@ -77,8 +74,8 @@ void read_MPU6050(){
 void limitador_pendiente() {
   //Evitar picos en la medición que produzcan gran sobreosciliación. 
   //Pensada para trabajar con grados.
-  if (ym3_grad > (ym3_grad_ant + 1000*T)) { ym3_grad = ym3_grad_ant + 1000*T;}
-  else if (ym3_grad < (ym3_grad_ant -1000*T)) {ym3_grad = ym3_grad_ant - 1000*T;}
+  if (ym3_grad > (ym3_grad_ant + 10)) { ym3_grad = ym3_grad_ant + 10;}
+  else if (ym3_grad < (ym3_grad_ant -10)) {ym3_grad = ym3_grad_ant - 10;}
 }
 void get_angle(int Ax, int Ay, int Az, int Gy) {
   //Parámetros filtro complementario: 
@@ -93,16 +90,14 @@ void get_angle(int Ax, int Ay, int Az, int Gy) {
   //Cálculo del pitch (U --> radianes)
   //Solo acelerómetro --> Estable en el tiempo, pero mucho ruido.
   ym1 = atan(Ax / sqrt((Ay*Ay) + (Az*Az))); 
-  ym2 = a*ym2 + (1-a)*ym1; 
   //Acelerómetro + giroscopio --> Estable en el tiempo y poco ruido.
-  ym3 = A * (ym3 + (Gy_rad)*T) + B *ym1; 
+  ym3 = A * (ym1 + (Gy_rad)*T) + B *ym1; 
   //Señal ym3 filtrada para la acción derivada.
   //Motivo: La acción derivada amplifica el ruido de medida.
   ym4 = a*ym4 + (1-a)*ym3; 
   
   //Conversión de radianes a grados: 
   ym1_grad = ym1 * (180.0 / M_PI);
-  ym2_grad = ym2 * (180.0 / M_PI);
   ym3_grad = ym3 * (180.0 / M_PI);
   ym4_grad = ym4 * (180.0 / M_PI);
   
@@ -111,19 +106,13 @@ void get_angle(int Ax, int Ay, int Az, int Gy) {
 }
 
 void PwmTask(void *pvParameters) {
-  // Configuración de pines
-  pinMode(motor11, OUTPUT);
-  pinMode(motor12, OUTPUT);
-  pinMode(motor21, OUTPUT);
-  pinMode(motor22, OUTPUT);
-
   while (true) {
     int pwm = constrain(pwmValue, -255, 255);
     int absPwm = abs(pwm);
 
-    unsigned long period = 1000000UL / pwmFrequency;
-    unsigned long onTime = (absPwm * period) / 255;
-    unsigned long offTime = period - onTime;
+    unsigned long period = 1000000UL / pwmFrequency; 
+    unsigned long onTime = (absPwm * period) / 255; 
+    unsigned long offTime = period - onTime; 
 
     // Dirección
     if (pwm > 0) {
@@ -163,10 +152,10 @@ void PwmTask(void *pvParameters) {
 //Objetivo: Todas las acciones de control producen movimiento en las ruedas.
 void banda_muerta() {
   if (u < 0){
-    u = u - 12;
+    u = u - 6;
   }
   else if (u > 0){
-    u = u + 12; 
+    u = u + 6; 
   }
 }
 
@@ -178,7 +167,7 @@ void ploter_debug() {
   Serial.print(ym3_grad);
   Serial.print(",Y4grados:"); //Complementario + Filtro
   Serial.print(ym4_grad);
-  Serial.print(",U_PWM:");
+  Serial.print(",U_PWM:"); //Acción de control
   Serial.println(u);
 }
 
